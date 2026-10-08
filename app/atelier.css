@@ -13,6 +13,19 @@
   --display: Georgia, "Times New Roman", serif;
   --ease-craft: cubic-bezier(0.22, 1, 0.36, 1);
 }
+.connection-state {
+  max-width: 650px;
+  margin: 12vh auto;
+  padding: 32px 24px;
+}
+.connection-state h1 {
+  margin: 18px 0;
+}
+.connection-state > p:not(.eyebrow) {
+  margin-bottom: 20px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
 body {
   font-family: "Segoe UI", Arial, sans-serif;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23756542' opacity='.035' filter='url(%23n)' d='M0 0h120v120H0z'/%3E%3C/svg%3E");
@@ -692,8 +705,12 @@ textarea:focus {
 .bar.costs {
   background: #d3b866;
 }
-.coral-dot { background: #355b45; }
-.wood-dot { background: #d3b866; }
+.coral-dot {
+  background: #355b45;
+}
+.wood-dot {
+  background: #d3b866;
+}
 .craft-card {
   background: #e2cf8e;
   border: 1px solid #d6bd76;
