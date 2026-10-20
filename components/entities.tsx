@@ -14,7 +14,7 @@ import {
   type Field,
   type Values,
 } from "./ui";
-import { money, number, productCost, today, dateLabel } from "@/lib/engine";
+import { money, number, productCost, today, dateLabel, canChangeUnit, } from "@/lib/engine";
 import type { Entity, Ingredient, Product } from "@/lib/types";
 const names: Record<Entity, [string, string, string]> = {
   materials: [
@@ -236,7 +236,16 @@ export function EntityPage({
             label: "Unidade",
             type: "select" as const,
             required: true,
-            disabled: entity !== "materials" || Boolean(editing?.id),
+            disabled:
+              entity !== "materials" ||
+              (Boolean(editing?.id) &&
+                !canChangeUnit(state, String(editing?.id))),
+            hint:
+              entity === "materials" &&
+              editing?.id &&
+              !canChangeUnit(state, String(editing.id))
+                ? "Unidade travada: este material já foi usado em peças, fichas técnicas, cortes ou produções."
+                : undefined,
             options: [
               "un",
               "m",

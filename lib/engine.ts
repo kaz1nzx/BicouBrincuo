@@ -12,6 +12,7 @@ import type {
   Order,
   Requirement,
   Entity,
+  Unit,
 } from "./types";
 export const money = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -252,6 +253,18 @@ function ensureReference(s: State, entity: Entity, id: string) {
     "Este cadastro tem vínculos ou histórico e não pode ser excluído.",
   );
 }
+export function canChangeUnit(s: State, id: string) {
+  return (
+    !s.parts.some((p) => p.materialId === id) &&
+    !s.products.some((p) => p.recipe.some((r) => r.itemId === id)) &&
+    !s.movements.some(
+      (m) =>
+        m.itemId === id &&
+        (m.reason === "Transformação" || m.reason.startsWith("Produção")),
+    )
+  );
+}
+
 function save(
   s: State,
   entity: Entity,
@@ -271,10 +284,15 @@ function save(
       "Estoque em unidades deve ser inteiro.",
     );
     if (existing) {
-      assert(
-        existing.unit === data.unit,
-        "A unidade não pode mudar após o cadastro. Crie um novo material.",
-      );
+      if (existing.unit !== data.unit) {
+        assert(
+          entity === "materials" && canChangeUnit(s, String(existing.id)),
+          "A unidade não pode mudar: este material já foi usado em peças, fichas técnicas, cortes ou produções.",
+        );
+        s.movements.forEach((m) => {
+          if (m.itemId === existing.id) m.unit = data.unit as Unit;
+        });
+      }
       Object.assign(value, { stock: existing.stock, cost: existing.cost });
       if (entity === "materials")
         Object.assign(value, {
