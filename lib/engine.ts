@@ -13,6 +13,8 @@ import type {
   Requirement,
   Entity,
   Unit,
+  Material,
+  Purchase,
 } from "./types";
 export const money = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -224,6 +226,96 @@ function addStock(
   v.cost = round((v.stock * v.cost + totalCost) / (v.stock + qty));
   move(s, kind, id, qty, reason, originId, date, actor);
 }
+type PurchaseInput = Omit<Purchase, "id" | "unitCost">;
+function applyPurchase(s: State, c: PurchaseInput, op: string, actor: string) {
+  const v = s.materials.find((v) => v.id === c.materialId);
+  assert(v, "Material não encontrado.");
+  assert(
+    !c.supplierId || s.suppliers.some((v) => v.id === c.supplierId),
+    "Fornecedor inválido.",
+  );
+  const total = c.total + c.freight + c.extra;
+  const cost = round(total / c.quantity);
+  addStock(s, "material", v.id, c.quantity, total, op, c.date, actor, "Compra");
+  v.lastPrice = cost;
+  v.lastPurchase = c.date;
+  s.purchases.push({
+    materialId: c.materialId,
+    supplierId: c.supplierId,
+    quantity: c.quantity,
+    total: c.total,
+    freight: c.freight,
+    extra: c.extra,
+    date: c.date,
+    invoice: c.invoice,
+    notes: c.notes,
+    id: op,
+    unitCost: cost,
+  });
+}
+/** A compra só pode ser corrigida enquanto o material dela não foi consumido
+ * depois (corte, produção, perda ou venda). Assim o custo médio volta
+ * exatamente ao que seria sem ela. */
+export function canEditPurchase(s: State, purchaseId: string) {
+  const p = s.purchases.find((v) => v.id === purchaseId);
+  if (!p) return false;
+  const index = s.movements.findIndex(
+    (m) =>
+      m.originId === purchaseId &&
+      m.itemId === p.materialId &&
+      m.reason === "Compra",
+  );
+  if (index < 0) return false;
+  return s.movements
+    .slice(index + 1)
+    .every(
+      (m) =>
+        m.itemId !== p.materialId ||
+        m.reason === "Compra" ||
+        m.reason === "Correção de compra",
+    );
+}
+function undoPurchase(s: State, purchaseId: string, op: string, actor: string) {
+  const p = s.purchases.find((v) => v.id === purchaseId);
+  assert(p, "Compra não encontrada.");
+  assert(
+    canEditPurchase(s, purchaseId),
+    "Esta compra não pode mais ser alterada: o material já foi usado depois dela (corte, produção, perda ou venda). Registre uma perda ou uma nova compra para acertar o estoque.",
+  );
+  const v = item(s, "material", p.materialId) as Material;
+  const paid = p.total + p.freight + p.extra;
+  const remaining = round(v.stock - p.quantity);
+  assert(remaining >= -1e-6, "Estoque insuficiente para desfazer a compra.");
+  if (remaining > 1e-6)
+    v.cost = round(Math.max(0, (v.stock * v.cost - paid) / remaining));
+  else {
+    const before = s.movements.findIndex(
+      (m) => m.originId === purchaseId && m.reason === "Compra",
+    );
+    const previous = s.movements
+      .slice(0, before)
+      .reverse()
+      .find((m) => m.itemId === v.id);
+    v.cost = previous ? previous.unitCost : 0;
+  }
+  move(
+    s,
+    "material",
+    v.id,
+    -p.quantity,
+    "Correção de compra",
+    op,
+    today(),
+    actor,
+  );
+  s.purchases = s.purchases.filter((v) => v.id !== purchaseId);
+  const last = s.purchases
+    .filter((v) => v.materialId === p.materialId)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .at(-1);
+  v.lastPrice = last ? last.unitCost : 0;
+  v.lastPurchase = last ? last.date : "";
+}
 function ensureReference(s: State, entity: Entity, id: string) {
   let used = false;
   if (entity === "materials")
@@ -301,8 +393,35 @@ function save(
         });
     }
   }
-  if (existing) Object.assign(existing, value);
-  else {
+  if (existing) {
+    const newCost = Number(data.cost);
+    const costChanged =
+      ["materials", "parts", "products"].includes(entity) &&
+      Number.isFinite(newCost) &&
+      Math.abs(newCost - Number(existing.cost)) > 1e-9;
+    Object.assign(existing, value);
+    if (costChanged) {
+      // Corrige o custo do que está em estoque daqui pra frente. Vendas,
+      // produções e cortes já registrados guardam o custo da época.
+      existing.cost = round(newCost);
+      const kind =
+        entity === "materials"
+          ? "material"
+          : entity === "parts"
+            ? "part"
+            : "product";
+      move(
+        s,
+        kind,
+        String(existing.id),
+        0,
+        "Ajuste de custo",
+        String(existing.id),
+        today(),
+        actor,
+      );
+    }
+  } else {
     list.push(value);
     if (
       ["materials", "parts", "products"].includes(entity) &&
@@ -444,31 +563,18 @@ export function execute(
         s[c.entity] as { id: string }[]
       ).filter((v) => v.id !== c.id);
       break;
-    case "purchase": {
-      const v = s.materials.find((v) => v.id === c.materialId);
-      assert(v, "Material não encontrado.");
-      assert(
-        !c.supplierId || s.suppliers.some((v) => v.id === c.supplierId),
-        "Fornecedor inválido.",
-      );
-      const total = c.total + c.freight + c.extra;
-      const cost = round(total / c.quantity);
-      addStock(
-        s,
-        "material",
-        v.id,
-        c.quantity,
-        total,
-        op,
-        c.date,
-        actor,
-        "Compra",
-      );
-      v.lastPrice = cost;
-      v.lastPurchase = c.date;
-      s.purchases.push({ ...c, id: op, unitCost: cost });
+    case "purchase":
+      applyPurchase(s, c, op, actor);
+      break;
+    case "editPurchase": {
+      const { id: purchaseId, ...data } = c;
+      undoPurchase(s, purchaseId, op, actor);
+      applyPurchase(s, data, op, actor);
       break;
     }
+    case "deletePurchase":
+      undoPurchase(s, c.id, op, actor);
+      break;
     case "transform": {
       const v = item(s, "material", c.materialId);
       assert(v.unit === "cm", "Transformação de madeira usa cm.");

@@ -935,6 +935,10 @@ svg {
   padding: 7px;
   max-width: 145px;
 }
+.operation-row .row-actions {
+  margin-left: auto;
+  gap: 4px;
+}
 .product-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1122,6 +1126,25 @@ svg {
 }
 .calculation small {
   color: #967e67;
+}
+.profit-preview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+.profit-preview b,
+.profit-preview strong {
+  text-align: right;
+}
+.profit-preview strong {
+  font-size: 17px;
+}
+.profit-preview strong.negative {
+  color: #b5452f;
+}
+.profit-preview small {
+  grid-column: 1 / -1;
 }
 .upload-label {
   display: block;

@@ -26,6 +26,8 @@ const unit = z.enum([
   "barra",
   "pacote",
   "chapa",
+  "min",
+  "h",
 ]);
 const inventory = {
   id: optionalId,
@@ -143,17 +145,15 @@ export const settingsSchema = z
 export const checkoutSchema = z
   .object({
     requestId: id,
-    customer: contact
-      .omit({ id: true, notes: true, company: true })
-      .extend({
-        name: text.min(2),
-        phone: text.min(8),
-        email: z.email(),
-        address: text.min(5),
-        city: text.min(2),
-        state: z.string().length(2),
-        zip: z.string().regex(/^\d{5}-?\d{3}$/),
-      }),
+    customer: contact.omit({ id: true, notes: true, company: true }).extend({
+      name: text.min(2),
+      phone: text.min(8),
+      email: z.email(),
+      address: text.min(5),
+      city: text.min(2),
+      state: z.string().length(2),
+      zip: z.string().regex(/^\d{5}-?\d{3}$/),
+    }),
     items: z.array(line).min(1).max(50),
     payment: z.enum([
       "Pix",
@@ -167,6 +167,17 @@ export const checkoutSchema = z
     website: z.string().max(0).default(""),
   })
   .strict();
+const purchaseFields = {
+  materialId: id,
+  supplierId: optionalId,
+  quantity: positive,
+  total: n,
+  freight: n,
+  extra: n,
+  date,
+  invoice: text,
+  notes: text,
+};
 const command = z.discriminatedUnion("type", [
   z.object({ type: z.literal("saveMaterial"), data: material }),
   z.object({ type: z.literal("savePart"), data: part }),
@@ -189,18 +200,9 @@ const command = z.discriminatedUnion("type", [
     ]),
     id,
   }),
-  z.object({
-    type: z.literal("purchase"),
-    materialId: id,
-    supplierId: optionalId,
-    quantity: positive,
-    total: n,
-    freight: n,
-    extra: n,
-    date,
-    invoice: text,
-    notes: text,
-  }),
+  z.object({ type: z.literal("purchase"), ...purchaseFields }),
+  z.object({ type: z.literal("editPurchase"), id, ...purchaseFields }),
+  z.object({ type: z.literal("deletePurchase"), id }),
   z.object({
     type: z.literal("transform"),
     materialId: id,

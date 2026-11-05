@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, type ReactNode, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type FormEvent,
+} from "react";
 import { X, Bird, Plus } from "lucide-react";
 export function Brand({
   small = false,
@@ -150,6 +156,87 @@ export function Modal({
   );
 }
 export type Values = Record<string, string | number | boolean>;
+/** Lê um número digitado com vírgula ou ponto ("22,06" ou "22.06").
+ * Devolve "" para campo vazio e null quando o texto não é um número. */
+export function parseDecimal(text: string): number | "" | null {
+  let t = text.trim().replace(/\s/g, "");
+  if (t === "") return "";
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+const decimalText = (v: unknown) =>
+  v === "" || v === null || v === undefined || !Number.isFinite(Number(v))
+    ? ""
+    : String(Number(v)).replace(".", ",");
+/** Campo numérico que guarda o texto enquanto a pessoa digita, para que
+ * "22," ou "22,0" não sejam apagados antes de ela terminar (ex.: 22,06). */
+export function NumberInput({
+  value,
+  onValueChange,
+  min,
+  max,
+  integer = false,
+  required,
+  disabled,
+  placeholder,
+  "aria-label": ariaLabel,
+}: {
+  value: number | "";
+  onValueChange: (value: number | "") => void;
+  min?: number;
+  max?: number;
+  integer?: boolean;
+  required?: boolean;
+  disabled?: boolean;
+  placeholder?: string;
+  "aria-label"?: string;
+}) {
+  const [text, setText] = useState(() => decimalText(value));
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const parsed = parseDecimal(text);
+    const current = value === "" ? "" : Number(value);
+    const cleared = parsed === "" && current === 0;
+    if (parsed !== current && !cleared) setText(decimalText(value));
+    // Só reage quando o valor vem de fora (ex.: formulário reaberto).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  useEffect(() => {
+    const parsed = parseDecimal(text);
+    let message = "";
+    if (parsed === null)
+      message = "Digite um número válido, por exemplo 22,06.";
+    else if (parsed !== "") {
+      if (integer && !Number.isInteger(parsed))
+        message = "Use um número inteiro.";
+      else if (min !== undefined && parsed < min)
+        message = "O valor mínimo é " + decimalText(min) + ".";
+      else if (max !== undefined && parsed > max)
+        message = "O valor máximo é " + decimalText(max) + ".";
+    }
+    ref.current?.setCustomValidity(message);
+  }, [text, min, max, integer]);
+  return (
+    <input
+      ref={ref}
+      aria-label={ariaLabel}
+      type="text"
+      inputMode={integer ? "numeric" : "decimal"}
+      autoComplete="off"
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setText(e.target.value);
+        const parsed = parseDecimal(e.target.value);
+        if (parsed !== null) onValueChange(parsed);
+      }}
+      required={required}
+      disabled={disabled}
+    />
+  );
+}
 export interface Field {
   key: string;
   label: string;
@@ -206,25 +293,23 @@ export function Fields({
               value={String(values[f.key] ?? "")}
               onChange={(e) => onChange({ ...values, [f.key]: e.target.value })}
             />
+          ) : f.type === "number" ? (
+            <NumberInput
+              aria-label={f.label}
+              value={values[f.key] as number | ""}
+              onValueChange={(v) => onChange({ ...values, [f.key]: v })}
+              min={f.min ?? 0}
+              max={f.max}
+              integer={f.step === "1"}
+              required={f.required}
+              disabled={f.disabled}
+            />
           ) : (
             <input
               aria-label={f.label}
               type={f.type || "text"}
               value={String(values[f.key] ?? "")}
-              onChange={(e) =>
-                onChange({
-                  ...values,
-                  [f.key]:
-                    f.type === "number"
-                      ? e.target.value === ""
-                        ? ""
-                        : Number(e.target.value)
-                      : e.target.value,
-                })
-              }
-              min={f.min ?? (f.type === "number" ? 0 : undefined)}
-              max={f.max}
-              step={f.step || "any"}
+              onChange={(e) => onChange({ ...values, [f.key]: e.target.value })}
               required={f.required}
               disabled={f.disabled}
             />

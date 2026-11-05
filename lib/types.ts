@@ -9,7 +9,9 @@ export type Unit =
   | "mL"
   | "barra"
   | "pacote"
-  | "chapa";
+  | "chapa"
+  | "min"
+  | "h";
 export type Kind = "material" | "part" | "product";
 export interface Inventory {
   id: string;
@@ -217,7 +219,12 @@ export interface State {
   audit: Audit[];
 }
 export type Entity =
-  "materials" | "parts" | "products" | "customers" | "suppliers" | "expenses";
+  | "materials"
+  | "parts"
+  | "products"
+  | "customers"
+  | "suppliers"
+  | "expenses";
 export interface Requirement {
   kind: "material" | "part";
   itemId: string;
@@ -252,3 +259,4 @@ export interface Catalog {
     | "defaultFreight"
   >;
 }
+

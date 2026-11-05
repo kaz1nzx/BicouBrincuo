@@ -11,6 +11,7 @@ import {
   Modal,
   FormFooter,
   submit,
+  NumberInput,
   type Values,
   type Field,
 } from "./ui";
@@ -182,22 +183,20 @@ export function PricingPage() {
             </small>
             <label className="stack-label">
               Margem desejada sobre a venda (%)
-              <input
-                type="number"
+              <NumberInput
                 value={margin}
-                min="0"
-                max="99"
-                onChange={(e) => setMargin(Number(e.target.value))}
+                min={0}
+                max={99}
+                onValueChange={(v) => setMargin(v === "" ? 0 : v)}
               />
             </label>
             <label className="stack-label">
               Desconto previsto (%)
-              <input
-                type="number"
+              <NumberInput
                 value={discount}
-                min="0"
-                max="99"
-                onChange={(e) => setDiscount(Number(e.target.value))}
+                min={0}
+                max={99}
+                onValueChange={(v) => setDiscount(v === "" ? 0 : v)}
               />
             </label>
             <p className="muted">

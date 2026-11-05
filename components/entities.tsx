@@ -11,10 +11,18 @@ import {
   Empty,
   Badge,
   submit,
+  NumberInput,
   type Field,
   type Values,
 } from "./ui";
-import { money, number, productCost, today, dateLabel, canChangeUnit, } from "@/lib/engine";
+import {
+  money,
+  number,
+  productCost,
+  today,
+  dateLabel,
+  canChangeUnit,
+} from "@/lib/engine";
 import type { Entity, Ingredient, Product } from "@/lib/types";
 const names: Record<Entity, [string, string, string]> = {
   materials: [
@@ -117,17 +125,15 @@ export function RecipeEditor({
               </option>
             ))}
           </select>
-          <input
+          <NumberInput
             aria-label="Quantidade do componente"
-            type="number"
-            min="0.001"
-            step="any"
+            min={0.001}
             required
             value={r.quantity}
-            onChange={(e) =>
+            onValueChange={(q) =>
               onChange(
                 recipe.map((v, j) =>
-                  i === j ? { ...v, quantity: Number(e.target.value) } : v,
+                  i === j ? { ...v, quantity: q === "" ? 0 : q } : v,
                 ),
               )
             }
@@ -142,6 +148,62 @@ export function RecipeEditor({
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+/** Mostra, enquanto a pessoa preenche, quanto o brinquedo custa e quanto
+ * sobra de lucro no preço de venda informado. */
+function ProfitPreview({
+  values,
+  recipe,
+}: {
+  values: Values;
+  recipe: Ingredient[];
+}) {
+  const { state } = useStore();
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const materials = recipe.reduce((sum, r) => {
+    const list = r.kind === "part" ? state.parts : state.materials;
+    const found = list.find((v) => v.id === r.itemId);
+    return sum + (found ? found.cost * num(r.quantity) : 0);
+  }, 0);
+  const labor = num(values.labor),
+    overhead = num(values.overhead),
+    extra = num(values.extra),
+    price = num(values.price);
+  const cost = materials + labor + overhead + extra;
+  const rates =
+    state.settings.taxRate +
+    state.settings.feeRate +
+    state.settings.commissionRate;
+  const taxes = (price * rates) / 100;
+  const profit = price - cost - taxes;
+  return (
+    <div className="calculation profit-preview">
+      <span>Materiais e peças da ficha</span>
+      <b>{money(materials)}</b>
+      <span>Mão de obra + custo fixo + embalagem</span>
+      <b>{money(labor + overhead + extra)}</b>
+      <span>Custo total por brinquedo</span>
+      <strong>{money(cost)}</strong>
+      <span>Preço de venda</span>
+      <b>{money(price)}</b>
+      {rates ? (
+        <>
+          <span>Impostos, taxas e comissão ({number(rates)}%)</span>
+          <b>− {money(taxes)}</b>
+        </>
+      ) : null}
+      <span>Lucro estimado por brinquedo</span>
+      <strong className={profit < 0 ? "negative" : ""}>
+        {money(profit)}
+        {price > 0 ? " (" + number((profit / price) * 100) + "% do preço)" : ""}
+      </strong>
+      <small>
+        O lucro é calculado sozinho: preço de venda − custo total − taxas. Não
+        precisa digitar. Para descobrir o preço a partir da margem que você
+        quer, use o Simulador de preço.
+      </small>
     </div>
   );
 }
@@ -258,6 +320,8 @@ export function EntityPage({
               "barra",
               "pacote",
               "chapa",
+              "min",
+              "h",
             ].map((v) => ({ value: v, label: v })),
           },
           {
@@ -272,9 +336,13 @@ export function EntityPage({
           { key: "minimum", label: "Estoque mínimo", type: "number" as const },
           {
             key: "cost",
-            label: "Custo unitário inicial (R$)",
+            label: editing?.id
+              ? "Custo unitário atual (R$)"
+              : "Custo unitário inicial (R$)",
             type: "number" as const,
-            disabled: Boolean(editing?.id),
+            hint: editing?.id
+              ? "Corrija se ficou errado ou zerado. Vale para o estoque atual daqui pra frente; vendas e produções já feitas não mudam."
+              : "Quanto custou cada unidade do estoque inicial. Se deixar 0, o custo fica zerado.",
           },
         ]
       : []),
@@ -351,11 +419,13 @@ export function EntityPage({
             key: "overhead",
             label: "Custo fixo proporcional (R$)",
             type: "number" as const,
+            hint: "A parte do aluguel, luz, internet etc. que cabe a cada brinquedo. Use 0 se você já lança esses gastos em Despesas.",
           },
           {
             key: "extra",
-            label: "Adicionais por unidade (R$)",
+            label: "Embalagem e outros por unidade (R$)",
             type: "number" as const,
+            hint: "Ex.: saquinho, etiqueta, cartão ou o frete que você paga sem cobrar do cliente.",
           },
           {
             key: "active",
@@ -646,6 +716,7 @@ export function EntityPage({
                   />
                 </label>
                 <RecipeEditor recipe={recipe} onChange={setRecipe} />
+                <ProfitPreview values={editing} recipe={recipe} />
               </>
             ) : null}
             <FormFooter busy={busy} onClose={() => setEditing(null)} />

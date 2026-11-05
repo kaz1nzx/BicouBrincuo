@@ -10,6 +10,7 @@ import {
   today,
   needsForOrder,
   metrics,
+  canEditPurchase,
 } from "../lib/engine";
 import type { State } from "../lib/types";
 const command = (s: State, c: Record<string, unknown>) =>
@@ -317,17 +318,23 @@ test("exclusão preserva vínculos de fichas e pedidos", () => {
     /vínculos/,
   );
 });
-test("editar cadastro não sobrescreve estoque nem custo médio", () => {
+test("editar cadastro não sobrescreve estoque; custo só muda com ajuste registrado", () => {
   const s = demoState();
-  const p = {
-    ...s.materials[0],
-    stock: 99999,
-    cost: 999,
-    name: "Madeira renovada",
-  };
-  const n = command(s, { type: "saveMaterial", data: p });
-  assert.equal(n.materials[0].stock, s.materials[0].stock);
-  assert.equal(n.materials[0].cost, s.materials[0].cost);
+  const same = command(s, {
+    type: "saveMaterial",
+    data: { ...s.materials[0], stock: 99999, name: "Madeira renovada" },
+  });
+  assert.equal(same.materials[0].stock, s.materials[0].stock);
+  assert.equal(same.materials[0].cost, s.materials[0].cost);
+  assert.equal(same.movements.length, s.movements.length);
+  const fixed = command(s, {
+    type: "saveMaterial",
+    data: { ...s.materials[0], stock: 99999, cost: 0.07 },
+  });
+  assert.equal(fixed.materials[0].stock, s.materials[0].stock);
+  assert.equal(fixed.materials[0].cost, 0.07);
+  assert.equal(fixed.movements.at(-1)!.reason, "Ajuste de custo");
+  assert.equal(fixed.movements.at(-1)!.quantity, 0);
 });
 test("unidades discretas não aceitam fração e datas inválidas são rejeitadas", () => {
   assert.throws(
@@ -401,4 +408,53 @@ test("rateio de desconto conserva o total em centavos em pedido com vários prod
       .reduce((sum, v) => sum + Math.round(v.revenue * 100), 0),
     14,
   );
+});
+
+test("compra pode ser editada ou excluída enquanto o material não foi usado", () => {
+  let s = command(demoState(), buy);
+  const before = demoState().materials.find((v) => v.id === sid(11))!;
+  const p = s.purchases.at(-1)!;
+  assert.ok(canEditPurchase(s, p.id));
+  s = command(s, { ...buy, type: "editPurchase", id: p.id, total: 40 });
+  const m = s.materials.find((v) => v.id === sid(11))!;
+  assert.equal(m.stock, before.stock + 8);
+  assert.ok(
+    Math.abs(m.cost - (before.stock * before.cost + 44) / (before.stock + 8)) <
+      1e-5,
+  );
+  const edited = s.purchases.at(-1)!;
+  s = command(s, { type: "deletePurchase", id: edited.id });
+  const back = s.materials.find((v) => v.id === sid(11))!;
+  assert.equal(back.stock, before.stock);
+  assert.ok(Math.abs(back.cost - before.cost) < 1e-5);
+  assert.ok(!s.purchases.some((v) => v.id === edited.id));
+});
+test("compra já consumida fica travada", () => {
+  let s = command(demoState(), { ...buy, materialId: sid(10), quantity: 100 });
+  const p = s.purchases.at(-1)!;
+  const part = s.parts.find((v) => v.materialId === sid(10))!;
+  s = command(s, {
+    type: "transform",
+    materialId: sid(10),
+    used: part.length,
+    lost: 0,
+    outputs: [{ partId: part.id, quantity: 1 }],
+    date: today(),
+    responsible: "Teste",
+    notes: "",
+  });
+  assert.ok(!canEditPurchase(s, p.id));
+  assert.throws(
+    () => command(s, { type: "deletePurchase", id: p.id }),
+    /não pode mais ser alterada/,
+  );
+});
+test("custo unitário pode ser corrigido sem mudar o saldo", () => {
+  const s = demoState();
+  const part = s.parts[0];
+  const n = command(s, { type: "savePart", data: { ...part, cost: 0.55 } });
+  const fixed = n.parts.find((v) => v.id === part.id)!;
+  assert.equal(fixed.cost, 0.55);
+  assert.equal(fixed.stock, part.stock);
+  assert.equal(n.movements.at(-1)!.reason, "Ajuste de custo");
 });

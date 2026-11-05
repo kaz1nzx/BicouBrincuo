@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, ArrowUpRight, Scissors } from "lucide-react";
+import { Plus, Trash2, ArrowUpRight, Scissors, Pencil } from "lucide-react";
 import { useStore } from "./provider";
 import {
   SectionHeader,
@@ -23,10 +23,15 @@ import {
   productionNeeds,
   activeOrders,
   needsForOrder,
+  canEditPurchase,
 } from "@/lib/engine";
 import type { Order, Requirement } from "@/lib/types";
 type Operation =
-  "compras" | "transformacao" | "perdas" | "producao" | "pedidos";
+  | "compras"
+  | "transformacao"
+  | "perdas"
+  | "producao"
+  | "pedidos";
 const copy: Record<Operation, [string, string, string]> = {
   compras: [
     "Compras",
@@ -126,7 +131,10 @@ export function OperationPage({
       { id: "", quantity: 1 },
     ]),
     [filter, setFilter] = useState("Todos"),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [editingPurchase, setEditingPurchase] = useState<string | null>(null),
+    [deletingPurchase, setDeletingPurchase] = useState<string | null>(null),
+    [blockedPurchase, setBlockedPurchase] = useState(false);
   const options = (data: { id: string; name: string }[]) =>
     data.map((v) => ({ value: v.id, label: v.name }));
   const dateFields: Field[] = [
@@ -308,6 +316,7 @@ export function OperationPage({
       ...dateFields,
     ];
   const start = () => {
+    setEditingPurchase(null);
     setValues(defaults[module]);
     setLines([{ id: "", quantity: 1 }]);
     setError("");
@@ -326,7 +335,8 @@ export function OperationPage({
                 ? "production"
                 : "order";
       await run({
-        type,
+        type: editingPurchase ? "editPurchase" : type,
+        ...(editingPurchase ? { id: editingPurchase } : {}),
         ...values,
         ...(module === "transformacao"
           ? {
@@ -345,8 +355,40 @@ export function OperationPage({
             : {}),
       });
       setOpen(false);
+      setEditingPurchase(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar.");
+    }
+  }
+  const editPurchase = (id: string) => {
+    const p = state.purchases.find((v) => v.id === id);
+    if (!p) return;
+    if (!canEditPurchase(state, id)) {
+      setBlockedPurchase(true);
+      return;
+    }
+    setEditingPurchase(id);
+    setValues({
+      materialId: p.materialId,
+      supplierId: p.supplierId,
+      quantity: p.quantity,
+      total: p.total,
+      freight: p.freight,
+      extra: p.extra,
+      date: p.date,
+      invoice: p.invoice,
+      notes: p.notes,
+    });
+    setError("");
+    setOpen(true);
+  };
+  async function removePurchase() {
+    if (!deletingPurchase) return;
+    try {
+      await run({ type: "deletePurchase", id: deletingPurchase });
+      setDeletingPurchase(null);
+    } catch {
+      /* provider */
     }
   }
   const total =
@@ -603,6 +645,28 @@ export function OperationPage({
                           }
                         </span>
                         <Badge tone="sage">Recebida</Badge>
+                        <div className="row-actions">
+                          <button
+                            className="icon-btn"
+                            type="button"
+                            onClick={() => editPurchase(p.id)}
+                            aria-label="Editar compra"
+                          >
+                            <Pencil size={17} />
+                          </button>
+                          <button
+                            className="icon-btn danger"
+                            type="button"
+                            onClick={() =>
+                              canEditPurchase(state, p.id)
+                                ? setDeletingPurchase(p.id)
+                                : setBlockedPurchase(true)
+                            }
+                            aria-label="Excluir compra"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
                       </div>
                     ))
                 : module === "transformacao"
@@ -683,7 +747,13 @@ export function OperationPage({
         </div>
       )}
       {open ? (
-        <Modal title={copy[module][2]} onClose={() => setOpen(false)}>
+        <Modal
+          title={editingPurchase ? "Editar compra" : copy[module][2]}
+          onClose={() => {
+            setOpen(false);
+            setEditingPurchase(null);
+          }}
+        >
           <form onSubmit={submit(save)}>
             {error ? <div className="error">{error}</div> : null}
             <Fields
@@ -806,8 +876,67 @@ export function OperationPage({
                 ) : null}
               </div>
             ) : null}
-            <FormFooter busy={busy} onClose={() => setOpen(false)} />
+            {editingPurchase ? (
+              <small className="muted">
+                Ao salvar, a compra anterior é desfeita e a nova é lançada no
+                lugar. O estoque e o custo médio do material são recalculados.
+              </small>
+            ) : null}
+            <FormFooter
+              busy={busy}
+              onClose={() => {
+                setOpen(false);
+                setEditingPurchase(null);
+              }}
+            />
           </form>
+        </Modal>
+      ) : null}
+      {deletingPurchase ? (
+        <Modal
+          title="Excluir compra?"
+          onClose={() => setDeletingPurchase(null)}
+        >
+          <p>
+            A quantidade desta compra sai do estoque e o custo médio do material
+            volta ao valor de antes dela.
+          </p>
+          <div className="form-footer">
+            <button className="btn" onClick={() => setDeletingPurchase(null)}>
+              Voltar
+            </button>
+            <button
+              className="btn danger-btn"
+              disabled={busy}
+              onClick={removePurchase}
+            >
+              Excluir
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+      {blockedPurchase ? (
+        <Modal
+          title="Esta compra não pode mais ser alterada"
+          onClose={() => setBlockedPurchase(false)}
+        >
+          <p>
+            O material desta compra já foi usado depois dela (num corte, numa
+            produção, numa perda ou numa venda). Mudar a compra agora deixaria o
+            custo das peças e brinquedos feitos com ela errado.
+          </p>
+          <p className="muted">
+            Para acertar o estoque, registre uma perda (se sobrou menos) ou uma
+            nova compra (se faltou entrar material).
+          </p>
+          <div className="form-footer">
+            <button
+              className="btn primary"
+              onClick={() => setBlockedPurchase(false)}
+            >
+              Entendi
+            </button>
+          </div>
         </Modal>
       ) : null}
     </>
