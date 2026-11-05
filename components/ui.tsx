@@ -170,8 +170,12 @@ const decimalText = (v: unknown) =>
   v === "" || v === null || v === undefined || !Number.isFinite(Number(v))
     ? ""
     : String(Number(v)).replace(".", ",");
+/** Texto mostrado no campo: o zero aparece vazio (só como dica cinza "0"),
+ * para a pessoa já sair digitando sem precisar apagar nada. */
+const fieldText = (v: unknown) => (Number(v) === 0 ? "" : decimalText(v));
 /** Campo numérico que guarda o texto enquanto a pessoa digita, para que
- * "22," ou "22,0" não sejam apagados antes de ela terminar (ex.: 22,06). */
+ * "22," ou "22,0" não sejam apagados antes de ela terminar (ex.: 22,06).
+ * Campo vazio vale 0; se o campo for obrigatório, vazio pede preenchimento. */
 export function NumberInput({
   value,
   onValueChange,
@@ -180,7 +184,7 @@ export function NumberInput({
   integer = false,
   required,
   disabled,
-  placeholder,
+  placeholder = "0",
   "aria-label": ariaLabel,
 }: {
   value: number | "";
@@ -193,13 +197,13 @@ export function NumberInput({
   placeholder?: string;
   "aria-label"?: string;
 }) {
-  const [text, setText] = useState(() => decimalText(value));
+  const [text, setText] = useState(() => fieldText(value));
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const parsed = parseDecimal(text);
-    const current = value === "" ? "" : Number(value);
-    const cleared = parsed === "" && current === 0;
-    if (parsed !== current && !cleared) setText(decimalText(value));
+    const typed = parsed === "" ? 0 : parsed;
+    const current = value === "" ? 0 : Number(value);
+    if (typed !== current) setText(fieldText(value));
     // Só reage quando o valor vem de fora (ex.: formulário reaberto).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -208,16 +212,16 @@ export function NumberInput({
     let message = "";
     if (parsed === null)
       message = "Digite um número válido, por exemplo 22,06.";
-    else if (parsed !== "") {
-      if (integer && !Number.isInteger(parsed))
-        message = "Use um número inteiro.";
-      else if (min !== undefined && parsed < min)
-        message = "O valor mínimo é " + decimalText(min) + ".";
-      else if (max !== undefined && parsed > max)
-        message = "O valor máximo é " + decimalText(max) + ".";
-    }
+    else if (parsed === "") {
+      if (required) message = "Preencha este campo.";
+    } else if (integer && !Number.isInteger(parsed))
+      message = "Use um número inteiro.";
+    else if (min !== undefined && parsed < min)
+      message = "O valor mínimo é " + (decimalText(min) || "0") + ".";
+    else if (max !== undefined && parsed > max)
+      message = "O valor máximo é " + (decimalText(max) || "0") + ".";
     ref.current?.setCustomValidity(message);
-  }, [text, min, max, integer]);
+  }, [text, min, max, integer, required]);
   return (
     <input
       ref={ref}
@@ -230,9 +234,9 @@ export function NumberInput({
       onChange={(e) => {
         setText(e.target.value);
         const parsed = parseDecimal(e.target.value);
-        if (parsed !== null) onValueChange(parsed);
+        if (parsed === "") onValueChange(required ? "" : 0);
+        else if (parsed !== null) onValueChange(parsed);
       }}
-      required={required}
       disabled={disabled}
     />
   );

@@ -196,7 +196,6 @@ export function OperationPage({
         key: "lost",
         label: "Perda total (cm)",
         type: "number",
-        required: true,
       },
       { key: "responsible", label: "Responsável", required: true },
       ...dateFields,

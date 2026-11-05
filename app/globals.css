@@ -2828,3 +2828,7 @@ svg {
     font-size: 22px;
   }
 }
+.form-grid input::placeholder,
+.recipe-row input::placeholder {
+  color: #c4b3a1;
+}
